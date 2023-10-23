@@ -1,0 +1,493 @@
+---
+title: "PM566_Midterm_Data_Project"
+author: Mona Bandov
+format:
+  html:
+    embed-resources: true
+editor: visual
+date: 10/22/2023
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(leaflet)
+library(ggfortify)
+library(RColorBrewer)
+library(gridExtra)
+library(parallel)
+library(tidyr)
+```
+
+## Research Question: To what extent does state HIV/Sex education mandates and parental roles in HIV/Sex education, including the youngest age group, influence the percentage of individuals linked to HIV Care in the United States?
+
+**Introduction:**
+
+HIV/AIDS remains a critical public health issue in the United States. This project investigates how state HIV/Sex education mandates and parental roles impact the percentage of individuals linked to HIV Care across different age groups. State education mandates and parental involvement are important in shaping the knowledge and attitudes towards sexual health and HIV. This project seeks to quantify their influence on linkage to HIV Care, in addition to exploring the youngest age group. By bridging the gaps between education policy, family dynamics, and healthcare access, this project aims to provide insights for policymakers, healthcare providers, and educators, ultimately improving HIV/sex education and linkage to care.
+
+### Information about the Data Set and Data Cleaning
+
+The [**HIV_Linkage_to_CARE**](https://gis.cdc.gov/grasp/nchhstpatlas/tables.html) dataset was obtained in CSV format from the Center for Disease Control and Prevention (CDC). This dataset was collected and recorded in the year 2021, which was two years following the onset of the COVID-19 pandemic.
+
+These are the columns:
+
+```         
+"Indicator" "Year"      "Geography" "FIPS"      "Age Group" "Cases"     "Percent"  
+  Indicator              Year       Geography              FIPS        Age Group 
+```
+
+```{r}
+HIV_Linkage_to_CARE <- read_csv("~/Desktop/Final Exam Data Projects/HIV-Linkage-to CARE.csv")
+colnames(HIV_Linkage_to_CARE)
+```
+
+The [**KFF_State_HIV_Education**](https://www.kff.org/hivaids/state-indicator/sexhiv-education-policy/currentTimeframe=0&sortModel=%7B%22colId%22:%22Location%22,%22sort%22:%22asc%22%7D.) dataset was acquired in CSV format from the Kaiser Family Foundation. The dataset was compiled and recorded in 2023, which was four years following the start of the COVID-19 pandemic. Subsequent code chunk were merged. The column originally labeled 'Location' has been renamed to 'state.'
+
+These are the columns:
+
+```         
+[1] "state"                                   "Mandates Sex Education?"                
+[3] "Mandates HIV Education?"                 "Notes on HIV and Sex Education Mandates"
+[5] "Parental Role__Notice"                   "Parental Role__Consent"                 
+[7] "Parental Role__Opt-out allowed"          "Footnotes"          
+```
+
+```{r}
+KFF_State_HIV_Education <- read_csv("~/Desktop/Final Exam Data Projects/KFF_State_HIV_Education.csv")
+#removed row 1
+KFF_State_HIV_Education<-KFF_State_HIV_Education[-c(1), ]
+KFF_State_HIV_Education <- KFF_State_HIV_Education%>%
+  rename(state="Location")
+colnames(KFF_State_HIV_Education)
+```
+
+The [**HIV_Diagnosis**](https://gis.cdc.gov/grasp/nchhstpatlas/tables.html.) dataset was downloaded in CSV format from the Centers for Disease Control and Prevention (CDC). It was recorded in 2021, two years after the onset of the COVID-19 pandemic.
+
+These are the columns:
+
+```         
+"Indicator"       "Year"            "Geography"       "FIPS"            "Age Group"       "Cases"          
+```
+
+```{r}
+HIV_Diagnosis <- read_csv("~/Desktop/Final Exam Data Projects/HIV Diagnosis.csv")
+colnames(HIV_Diagnosis)
+```
+
+The [**State_Long_Lat**](https://github.com/jasperdebie/VisInfo/blob/master/us-state-capitals.csv) dataset was located in CSV format on GitHub. It provides essential latitude and longitude coordinates required for basic mapping purposes.
+
+These are the columns:
+
+```{r}
+State_Long_Lat<- read_csv("~/Desktop/Final Exam Data Projects/State.csv")
+State_Long_Lat <- State_Long_Lat %>%rename(Geography = name)
+colnames(State_Long_Lat)
+```
+
+District of Columbia is not include, and we will not use that point.
+
+All three data sets were merged by [state]{.underline} and [age-group]{.underline}. After, the columns names were changed appropriately.
+
+```{r}
+merged_data <- inner_join(HIV_Diagnosis, HIV_Linkage_to_CARE, by = c("Geography", "Age Group"))
+merged_data <- merged_data %>%
+  rename(year = Year.y,
+         cases_linked_to_care = Cases.y,
+         cases_HIV_diagnosis = Cases.x,
+         state= Geography,
+         HIV_diagnosis_rate_per_100000="Rate per 100000")
+merged_data  <- merged_data %>%
+  select("year","state","Age Group", "cases_linked_to_care", "cases_HIV_diagnosis", "HIV_diagnosis_rate_per_100000")
+HIV_dataset <- merge(merged_data, KFF_State_HIV_Education, by = "state")
+State_Long_Lat<- State_Long_Lat %>% rename("state"="Geography")
+HIV_dataset <- merge(HIV_dataset, State_Long_Lat, by = "state")
+```
+
+Important columns were selected from the HIV_dataset.
+
+```{r}
+HIV_dataset  <- HIV_dataset %>%select("state","Age Group", "cases_HIV_diagnosis","cases_linked_to_care",  "HIV_diagnosis_rate_per_100000", "Mandates HIV Education?","Mandates Sex Education?", "Parental Role__Consent","Parental Role__Notice","Parental Role__Opt-out allowed", "Notes on HIV and Sex Education Mandates", "longitude","latitude")
+
+HIV_dataset <- HIV_dataset %>%
+  rename("Age_Group"="Age Group", "Mandates_HIV_Education"="Mandates HIV Education?","Mandates_Sex_Education"="Mandates Sex Education?","Parental_Role_Consent" ="Parental Role__Consent","Parental_Role_Notice" = "Parental Role__Notice","Parental_Role_Opt_out_allowed"= "Parental Role__Opt-out allowed","Notes"= "Notes on HIV and Sex Education Mandates")
+```
+
+The cleaned data set is now called **HIV_dataset**. We will proceed with exploring the HIV_dataset data table.
+
+These are the column names:
+
+```{r}
+colnames(HIV_dataset)
+```
+
+**Code Book:**
+
+1.  **state**: Categorical column representing the U.S. states or regions.
+
+2.  **Age_Group**: Categorical column representing different age groups.
+
+3.  **cases_HIV_diagnosis**: Numerical column representing the number of HIV diagnosis cases.
+
+4.  **cases_linked_to_care**: Numerical column representing the number of HIV diagnosis cases linked to care.
+
+5.  **HIV_diagnosis_rate_per_100000**: Numerical column representing the rate of HIV diagnosis per 100,000 people.
+
+6.  **Mandates_HIV_Education**: Categorical column with binary (yes/no) values, indicating whether HIV education is mandated.
+
+7.  **Mandates_Sex Education**: Categorical column with binary (yes/no) values, indicating whether sex education is mandated.
+
+8.  **Parental_Role_Consent**: Categorical column related to parental consent for education programs.
+
+9.  **Parental_Role_Notice**: Categorical column related to parental notice for education programs.
+
+10. **Parental Role\_\_Opt_out_allowed**: Categorical column related to whether parents are allowed to opt-out of education programs.
+
+11. **Notes**: Categorical column of notes related to HIV and sex education mandates.
+
+12. **percent_linkage_to_care**: The proportion of people diagnosed with HIV that are linked to care.
+
+13. **latitude:** Latitude of the state
+
+14. **longitude:** Longitude of the state
+
+### Exploring the Data Set:
+
+There are currently 200 observations and 13 columns:
+
+```{r}
+dim(HIV_dataset)
+```
+
+```{r}
+(summary(HIV_dataset))
+```
+
+Next, each column will be checked to identify the unique values and adjust the data.
+
+```{r}
+#unique(HIV_dataset$cases_HIV_diagnosis)
+zero_cases <- HIV_dataset %>%
+  filter(cases_HIV_diagnosis == 0)
+zero_cases
+```
+
+Wyoming has 0 cases of people diagnosed with HIV in age group 45-55.
+
+The process below will involve changing the "cases_linked_to_care" column to contain "NA" values when the data is not available. This operation will be applied to the remaining data points as well.
+
+```{r}
+#unique(HIV_dataset$cases_linked_to_care)
+HIV_dataset <- HIV_dataset %>%
+  mutate(cases_linked_to_care = ifelse(cases_linked_to_care == "Data not available", NA, cases_linked_to_care))
+```
+
+```{r}
+#unique(HIV_dataset$HIV_diagnosis_rate_per_100000)
+#unique(HIV_dataset$cases_HIV_diagnosis)
+#unique(HIV_dataset$cases_linked_to_care)
+#unique(HIV_dataset$Mandates_HIV_Education)
+#unique(HIV_dataset$Parental_Role_Notice)
+#unique(HIV_dataset$Parental_Role_Consent)
+#unique(HIV_dataset$Mandates_HIV_Education)
+#unique(HIV_dataset$Notes)
+```
+
+A new column was created to calculate the proportion of individuals diagnosed with HIV who are linked to HIV care.
+
+```{r}
+#Change my numbers to as.numeric()
+HIV_dataset$cases_HIV_diagnosis <- as.numeric(HIV_dataset$cases_HIV_diagnosis)
+HIV_dataset$cases_linked_to_care <- as.numeric(HIV_dataset$cases_linked_to_care)
+HIV_dataset$HIV_diagnosis_rate_per_100000 <- as.numeric(HIV_dataset$HIV_diagnosis_rate_per_100000)
+#HIV_dataset$percent_linkage_to_care <- as.numeric(HIV_dataset$percent_linkage_to_care)
+#New Column = Proportion of cases linked to care 
+HIV_dataset <- HIV_dataset %>%
+  mutate(percent_linkage_to_care = round(cases_linked_to_care / cases_HIV_diagnosis, 2))
+summary(HIV_dataset$percent_linkage_to_care) 
+```
+
+This is the final (HIV_dataset) cleaned data set with 200 observations and 14 columns.
+
+```{r}
+colnames(HIV_dataset)
+dim(HIV_dataset)
+summary(HIV_dataset)
+```
+
+The age_group_summary dataset groups HIV_dataset by age group.
+
+```{r}
+age_group_summary<-HIV_dataset %>%
+  group_by(Age_Group) %>% 
+  summarize(
+    Mean_HIV_diagnosis = mean(cases_HIV_diagnosis, na.rm = TRUE),  
+    Mean_Linked_to_Care = mean(cases_linked_to_care, na.rm = TRUE), 
+    Median_HIV_rate = median(HIV_diagnosis_rate_per_100000, na.rm = TRUE), 
+    Total_Cases = sum(cases_HIV_diagnosis, na.rm = TRUE),  
+    Total_Linked_to_Care = sum(cases_linked_to_care, na.rm = TRUE))
+age_group_summary
+```
+
+In the process of refining and preparing the dataset for analysis, the variables were thoughtfully renamed. Definition was assigned to each variable, and data cleaning procedures were used to find meaningful data points. Through the process, the dataset, now referred to as "HIV_dataset," has been carefully cleaned, setting the stage for further analysis and graphical representation.
+
+### **Data Visualization :**
+
+There are 50 states included in this data set.
+
+```{r}
+unique(HIV_dataset$state)
+```
+
+Basic Exploration of the United States:
+
+The unique_HIV_dataset_by_state data set represents aggregated data for each state.
+
+```{r}
+summary_by_state <- HIV_dataset %>%
+  group_by(state) %>%
+  summarize(
+    total_cases = sum(cases_HIV_diagnosis, na.rm = TRUE),
+    total_cases_linked = sum(cases_linked_to_care, na.rm = TRUE),
+    Mandates_Sex_Education = Mandates_Sex_Education,
+    Mandates_HIV_Education= Mandates_HIV_Education,
+    Parental_Role_Consent= Parental_Role_Consent,
+    Parental_Role_Notice = Parental_Role_Notice,
+    Parental_Role_Opt_out_allowed = Parental_Role_Opt_out_allowed,
+    percent_linkage_to_care = round(mean(percent_linkage_to_care, na.rm = TRUE),2),
+    longitude = longitude,
+    latitude = latitude)
+unique_HIV_dataset_by_state <- unique(summary_by_state)
+```
+
+**How many states mandate HIV and/or Sex Education in school located in the United States?**
+
+```{r}
+
+#Mandates for sexual education 
+plot_sex_education <- ggplot(data = unique_HIV_dataset_by_state, aes(x = Mandates_Sex_Education, fill = Mandates_Sex_Education)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = after_stat(count), group = Mandates_Sex_Education),
+            stat = "count", position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Mandates for Sex Education", x = "Mandates for Sex Education", y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal()
+
+# Mandates for HIV education 
+plot_hiv_education <- ggplot(data = unique_HIV_dataset_by_state, aes(x = Mandates_HIV_Education, fill = Mandates_HIV_Education)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = after_stat(count), group = Mandates_HIV_Education),
+            stat = "count", position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Mandates for HIV Education", x = "Mandates for HIV Education", y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal()
+
+#Side by Side Plots 
+grid.arrange(plot_sex_education, plot_hiv_education, ncol = 2)
+```
+
+Exactly 28 states out of the 50 states mandate general sexual education. Exactly 37 out of 50 states mandate HIV education. It is common that sexual education includes HIV education. Further analysis into the data set can help explain why there more state with mandates for HIV education and less with sexual education. It is unclear whether those two variables are independent or not.
+
+**Which state has the most and the least cases of HIV diagnosis?**
+
+```{r}
+sorted_cases <- unique_HIV_dataset_by_state %>%
+  arrange(desc(total_cases))
+as.data.frame(head((sorted_cases),1))
+as.data.frame(tail((sorted_cases),1))
+```
+
+**Texas** had the **highest HIV diagnosis cases** with about 79% of those diagnosed being linked to care. Sex and HIV Education is not required in Texas. For schools that offer sex and/or HIV education, parents are offered to opt their child out and parents are required to consent.
+
+**Wyoming** had the **lowest HIV diagnosis cases** with about 93% of those diagnosed being linked to care. Sex and HIV Education is not required in Wyoming. For schools that offer sex and/or HIV education, parents are not required to consent, are not given a notice, and do not have the option to opt their child out of course.
+
+**What is the relationship between parental notice of sex/HIV education and parental consent for their child to have sex/HIV education?**
+
+```{r}
+# Bar plot for Parental_Role_Notice 
+plot_parental_role_notice <- ggplot(data = unique_HIV_dataset_by_state, aes(x = Parental_Role_Notice, fill = Parental_Role_Notice)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = after_stat(count), group = Parental_Role_Notice),
+            stat = "count", position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Parental Role - Notice", x = "Parental Role - Notice", y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Bar plot for Parental_Role_Opt_out_allowed 
+plot_parental_consent <- ggplot(data = unique_HIV_dataset_by_state, aes(x = Parental_Role_Consent, fill = Parental_Role_Consent)) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = after_stat(count), group = Parental_Role_Consent),
+            stat = "count", position = position_dodge(width = 0.9), vjust = -0.5) +
+  labs(title = "Parental Role - Consent", x = "Parental Role - Consent", y = "Count") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+grid.arrange(plot_parental_role_notice, plot_parental_consent, ncol = 2, widths = c(2,2))
+```
+
+Exactly 24 states notify parents if their child's school will provide sex/HIV education. Exactly 25 states do not notify parents if their child's school will provide sex/HIV education. Exactly 1 state only notifies parents about HIV education.
+
+Exactly 44 states do not give parents the option to consent their child to sex/HIV education. Exactly 5 states give parents the option to consent their child to sex/HIV education. Exactly 1 states allow parents to consent to sex education only.
+
+Since both variables are closely related, relationship between parental consent and notice should further be exam.
+
+```{r}
+stacked_data <- unique_HIV_dataset_by_state %>%
+  pivot_longer(cols = c(Parental_Role_Consent, Parental_Role_Notice), names_to = "Role", values_to = "Value")
+stacked_data$Value <- factor(stacked_data$Value, levels = c("No", "Yes", "HIV education only", "Sex Education only"))
+plot_stacked <- ggplot(data = stacked_data, aes(x = Role, fill = Value)) +
+  geom_bar(position = "fill") +
+  labs(title = "Parental Role - Consent vs. Notice", x = "Parental Role", y = "Percent") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() 
+print(plot_stacked)
+```
+
+Given that almost half of the states notify parents, about 20% of those parents were allowed to consent their child to attend sex and HIV education.
+
+**Which state had the highest proportion and the lowest proportion of linkage to care?**
+
+```{r}
+linkage_dec <- unique_HIV_dataset_by_state %>%
+  arrange(desc(percent_linkage_to_care))
+as.data.frame(head((linkage_dec),2))
+as.data.frame(tail((linkage_dec),3))
+```
+
+**New Hampshire** had the **highest** proportion (100%) of those diagnosed with HIV linked to care. HIV and Sex education is required in school. Parents do not have to consent or are given a notice. They are also allowed to opt-out their child from HIV education.
+
+**New Hampshire** had the **highest** proportion (100%) of those diagnosed with HIV linked to care. HIV and Sex education is required in school. Parents do not have to consent, but they are given a notice. They are also allowed to opt-out their child.
+
+**Pennsylvania** had the **lowest proportion** (0%) of those diagnosed with HIV linked to care. HIV and sex education is not required in schools. Parents are not required to consent. However, parents get a notice of HIV education and are able to opt-out their child from HIV education.
+
+**New Jersey** had the **lowest proportion** (0%) of those diagnosed with HIV linked to care. HIV and sex education is required in schools. Parents do not have to consent their child, but they are given a notice. Parents are also given the option to opt-out their child.
+
+**Idaho** had the **lowest proportion** (0%) of those diagnosed with HIV linked to care. Sex education is required, but HIV education is not required. Parents are not required to consent their child to any form of education, and are only noticed if HIV education is provided. Parents can opt-out their child for HIV education only.
+
+```{r}
+
+map <- leaflet(data = unique_HIV_dataset_by_state) %>%addTiles() 
+
+color_palette <- colorNumeric(
+  palette = "YlOrRd",  
+  domain = unique_HIV_dataset_by_state$percent_linkage_to_care)
+map <- map %>% addCircleMarkers(
+  lat = ~latitude,
+  lng = ~longitude,
+  radius = 10,  
+  color = "red", 
+  fillColor = ~color_palette(percent_linkage_to_care),
+  fillOpacity = 0.7,
+  popup = ~paste("State: ", state, "<br>Percent Linkage to Care: ", percent_linkage_to_care, "%"))
+map <- map %>% addLegend(position = "bottomright",
+  pal = color_palette,
+  values = ~percent_linkage_to_care,
+  title = "Percentage Linkage to Care",
+  opacity = 1)
+map
+```
+
+Map Description: The circles on this map represents the percent of those diagnosed with HIV who are linked to HIV care by state. Yellow represents a low percentage while red represents a high percentage.
+
+Now that there is information for each state, age groups will be introduced.
+
+#### Age group 13-24
+
+Sex and HIV education have changed over time and most HIV and sex education is introduced in elementary, middle and high school. The data collected for HIV/Sex education applies to the current age group of ages 13-24 since the collection of the datasets were reported between 2021-2023. We are interested in looking at those who are aged 13-24 and we want to know the impact of the type of education they have on HIV diagnosis and linkage to care.
+
+**What is the distribution of HIV diagnosis cases by age group in the United States?**
+
+```{r}
+ggplot(HIV_dataset, aes(x = Age_Group, y = cases_HIV_diagnosis, fill = Age_Group)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of HIV Diagnosis Cases by Age Group in the United States",
+    x = "Age Group",
+    y = "Cases HIV Diagnosis") + scale_fill_brewer(palette = "Set2")
+```
+
+Given that age group 13-24 is the primary focus due to its relevance to all the collected datasets, HIV diagnosis cases for age group 13-24 is left skewed with outliers.
+
+**What is the mean HIV diagnosis for age group 13-24?**
+
+```{r}
+filter_age_13_24 <- HIV_dataset %>%
+  filter(Age_Group== "13-24") %>%group_by(Age_Group)
+mean_HIV_diagnosis_13_24 <- mean(filter_age_13_24$cases_HIV_diagnosis)
+tibble(mean_HIV_diagnosis_13_24)
+```
+
+The mean for HIV diagnosis for age group 13-24 is 138 in the United States.
+
+```{r}
+ggplot(HIV_dataset, aes(x = Age_Group, y = percent_linkage_to_care, fill = Age_Group)) +
+  geom_boxplot() +
+  labs(
+    title = "Proportion of Linkage to Care by Age Group in the United States",
+    x = "Age Group",
+    y = "Proportion of Linkage to Care"
+  ) +
+  scale_fill_brewer(palette = "Set2")  
+mean_linkage_13_24 <- HIV_dataset %>%
+  filter(Age_Group == "13-24") %>%  # Filter data for age group "13-24"
+  summarise(mean_linkage_13_24 = mean(percent_linkage_to_care, na.rm = TRUE),
+            max_linkage_13_24 =max(percent_linkage_to_care, na.rm = TRUE),
+            min_linkage_13_24 =min(percent_linkage_to_care, na.rm = TRUE),
+            sd_linkage_13_24 =sd(percent_linkage_to_care, na.rm = TRUE))
+tibble(mean_linkage_13_24)
+```
+
+The proportion of linkage to are by age group in the United States are relatively similar. The mean percentage of care for age group 13-24 in the United States is approximately 82%. An outlier (max) is present (1). The minimum is 0.38 percent linked to HIV care. The standard deviation is about 0.123.
+
+```{r}
+youngest_age_group <-HIV_dataset %>% filter(Age_Group == "13-24")
+```
+
+**What is the relationship between mandated HIV education and the percentage of those who have HIV diagnosis being linked to HIV care?**
+
+```{r}
+ggplot(youngest_age_group, aes(x = Mandates_HIV_Education, y = percent_linkage_to_care, fill = Mandates_HIV_Education)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    title = "Mandates for HIV Education by Percentage Linkage to Care",
+    x = "Mandates HIV Education",
+    y = "Percentage Linked to Care"
+  ) +
+  scale_fill_manual(values = c("Yes" = "lightgreen", "No" = "pink"))  
+
+
+```
+
+For age group 13-24 in the United States, the percentage linked to care when the state mandates HIV education is higher compared to states that do not mandate HIV educations. The likelihood of being linked to care for a person with an HIV diagnosis is higher when the state mandates HIV education.
+
+**Which state has the highest and lowest percentage (age 13-24) of those diagnosed with HIV are linked to HIV care?**
+
+```{r}
+yag_linked_to_care <-youngest_age_group  %>% arrange(desc(percent_linkage_to_care)) 
+(head((yag_linked_to_care),5))
+(tail((yag_linked_to_care),4))
+```
+
+The states with the lowest percentage (0%, age 13-24) of those diagnosed with HIV are linked to HIV care is Hawaii, Idaho, New Jersey and Pennsylvania. The states with the highest percentage (100%, age 13-24) of those diagnosed with HIV are linked to HIV care is Alaska, Montana, New Hampshire, Vermont, and Wyoming.
+
+### Conclusion:
+
+The project revealed that while a significant number of states mandate HIV education, fewer require sexual education. Intriguingly, these mandates often coincide, but the relationship between them remains unclear. We do not know if those two variables are independent of each other.
+
+There were variation among states. Texas, a state with a high number of HIV diagnosis cases, reported approximately 79% of those diagnosed being linked to care. Texas does not mandate sex or HIV education. On the other hand, Wyoming, with a lower number of HIV diagnosis cases, reported a high linkage to care rate of around 93%. Similar to Texas, sex and HIV education are not mandated in Wyoming.
+
+Parental roles also play a important role. Roughly half of the states notify parents when their child's school offers sex/HIV education. In a smaller amount of states, parents have the option to consent to their child's participation, often contingent upon prior notification.
+
+Furthermore, this project highlighted disparities between states. For instance, New Hampshire has 100% linkage to care among those diagnosed with HIV. The state mandates both HIV and sex education and does not require parental consent or notice. However, Pennsylvania and New Jersey reported 0% linkage to care, despite having distinct types of education. However, these data point are possibly due to unavailable data in the original data set.
+
+In analyzing age groups, the percentage of linkage to care remained relatively consistent, with a mean percentage of around 82%. Notably, states mandating HIV education appeared to have higher linkage to care rates for the 13-24 age group.
+
+In conclusion, this project bridges the gap between education policies, family dynamics, and healthcare access, providing valuable insights for addressing HIV in the United States. The findings emphasize the need for a well-informed approaches to public health, striving for more effective HIV prevention and care.
+
+### Limitations: 
+
+1.  **Representative Data:** An important consideration for future research is the choice of a more representative dataset. Instead of aggregated state data, a dataset that directly represents individuals within each state would provide a more concrete analysis.
+
+2.  **Temporal Data:** The dataset used for this analysis contains data from different years( 2021 and 2023). For a more accurate assessment of the current state of HIV care and education policies, using a dataset with information recorded in the same years would be ideal.
+
+3.  **Policy Dynamics:** Policies related to sexual and HIV education can change rapidly. Future research should incorporate a detailed analysis of the latest policies in place, including any recent shifts in state mandates or parental involvement in each state.
